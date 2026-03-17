@@ -107,3 +107,87 @@ curl http://localhost:8000/discover/trivia-service | python3 -m json.tool
 docker compose down
 ```
 
+---
+
+## Demo Script (Failure & Recovery)
+
+```bash
+# --- Step 1: Confirm both instances registered ---
+curl -s http://localhost:8000/services | python3 -m json.tool
+# Expect: trivia-svc-1 and trivia-svc-2 both show status: "healthy"
+
+# --- Step 2: Simulate instance failure ---
+docker compose stop trivia-svc-1
+
+# --- Step 3: Wait for TTL sweep to kick in (~25 seconds) ---
+sleep 25
+
+# --- Step 4: Verify failure detection ---
+curl -s http://localhost:8000/discover/trivia-service | python3 -m json.tool
+# Expect: only trivia-svc-2 returned (trivia-svc-1 is dead/purged)
+
+# --- Step 5: Simulate recovery ---
+docker compose start trivia-svc-1
+
+# --- Step 6: Wait for re-registration ---
+sleep 10
+
+# --- Step 7: Confirm both instances healthy again ---
+curl -s http://localhost:8000/discover/trivia-service | python3 -m json.tool
+# Expect: both trivia-svc-1 and trivia-svc-2 returned
+
+# --- Step 8: Call the trivia service directly (host ports) ---
+curl http://localhost:5001/trivia
+curl http://localhost:5002/trivia
+```
+
+---
+
+## API Reference
+
+### Service Registry (port 8000)
+
+| Method   | Path                         | Description                                          |
+|----------|------------------------------|------------------------------------------------------|
+| `POST`   | `/register`                  | Register a service instance                          |
+| `POST`   | `/heartbeat/{instance_id}`   | Send heartbeat; 404 means unknown → re-register      |
+| `DELETE` | `/deregister/{instance_id}`  | Explicit deregister on graceful shutdown             |
+| `GET`    | `/discover/{service_name}`   | Returns healthy instances only; 503 if none          |
+| `GET`    | `/services`                  | Admin: all instances including dead ones             |
+| `GET`    | `/health`                    | Docker healthcheck                                   |
+
+### Trivia Service (port 5001 / 5002 on host)
+
+| Method | Path      | Description                                         |
+|--------|-----------|-----------------------------------------------------|
+| `GET`  | `/trivia` | Random trivia fact + instance name + timestamp      |
+| `GET`  | `/health` | Health check                                        |
+
+---
+
+## Design Decisions
+
+**1. Custom registry vs Consul**
+Building the registry from scratch reveals the core mechanism: a store of
+`{service_name → {instance_id → {host, port, last_seen, status}}}` with a
+background TTL sweep. Consul abstracts this away; here it is explicit.
+
+**2. Push-based heartbeat vs pull-based health polling**
+The registry does not actively poll services. Instead, each service sends
+a heartbeat every 5 seconds. Silence beyond 15 seconds triggers the dead
+transition. This avoids the registry needing to know service topology in advance.
+
+**3. Re-discovery on every client request**
+The client re-queries `/discover/trivia-service` before each of the 10 calls.
+This means if an instance fails mid-demo, subsequent requests immediately stop
+routing to it — no stale routing table.
+
+**4. Heartbeat 404 triggers re-registration**
+If the registry restarts (losing its in-memory state), the next heartbeat
+from each service returns 404. The service reacts by calling `/register`
+again. This makes the system self-healing without operator intervention.
+
+**5. In-memory state**
+Acceptable for a demo. Production alternatives: Redis (persistence +
+pub/sub), etcd (distributed consensus), or a proper service mesh like Consul,
+Linkerd, or Istio.
