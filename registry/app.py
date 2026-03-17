@@ -53,3 +53,36 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Service Registry", version="1.0.0", lifespan=lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+class RegisterRequest(BaseModel):
+    service_name: str
+    host: str
+    port: int
+    instance_id: str
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/register", status_code=201)
+def register(req: RegisterRequest):
+    """Register a service instance. Idempotent — re-registering overwrites stale data."""
+    if req.service_name not in services:
+        services[req.service_name] = {}
+    now = time.time()
+    services[req.service_name][req.instance_id] = {
+        "instance_id": req.instance_id,
+        "service_name": req.service_name,
+        "host": req.host,
+        "port": req.port,
+        "registered_at": now,
+        "last_seen": now,
+        "status": "healthy",
+    }
+    print(f"[registry] REGISTERED  {req.instance_id} ({req.service_name}) @ {req.host}:{req.port}")
+    return services[req.service_name][req.instance_id]
