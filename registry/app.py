@@ -34,3 +34,22 @@ async def sweep_loop() -> None:
                 elif elapsed > TTL_SECONDS and inst["status"] == "healthy":
                     inst["status"] = "dead"
                     print(f"[registry] DEAD    {instance_id} ({service_name}) — silent for {elapsed:.1f}s")
+
+
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(sweep_loop())
+    print("[registry] Started — TTL sweep active")
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    print("[registry] Shut down")
+
+
+app = FastAPI(title="Service Registry", version="1.0.0", lifespan=lifespan)
