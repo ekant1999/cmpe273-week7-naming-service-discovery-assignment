@@ -44,3 +44,26 @@ TRIVIA_FACTS = [
     "A single cloud can weigh more than a million pounds despite appearing weightless.",
 ]
 
+
+# ---------------------------------------------------------------------------
+# Registry helpers
+# ---------------------------------------------------------------------------
+async def register_with_registry() -> None:
+    payload = {
+        "service_name": "trivia-service",
+        "host": INSTANCE_NAME,
+        "port": INSTANCE_PORT,
+        "instance_id": INSTANCE_NAME,
+    }
+    for attempt in range(MAX_REGISTER_RETRIES):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(f"{REGISTRY_URL}/register", json=payload, timeout=5.0)
+                resp.raise_for_status()
+                print(f"[{INSTANCE_NAME}] Registered with registry")
+                return
+        except Exception as exc:
+            wait = min(2 ** attempt, 15)
+            print(f"[{INSTANCE_NAME}] Register attempt {attempt + 1} failed: {exc}. Retrying in {wait}s")
+            await asyncio.sleep(wait)
+    print(f"[{INSTANCE_NAME}] WARNING: Could not register after {MAX_REGISTER_RETRIES} attempts")
