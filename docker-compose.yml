@@ -28,3 +28,69 @@ services:
       retries: 5
       start_period: 5s
     restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Trivia Service — Instance 1
+  # -------------------------------------------------------------------------
+  trivia-svc-1:
+    build:
+      context: ./trivia_service
+      dockerfile: Dockerfile
+    container_name: trivia-svc-1
+    ports:
+      - "5001:5001"
+    environment:
+      INSTANCE_NAME: trivia-svc-1
+      INSTANCE_PORT: "5001"
+      REGISTRY_URL: http://registry:8000
+    networks:
+      - service-mesh
+    depends_on:
+      registry:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Trivia Service — Instance 2
+  # Both instances use the same Dockerfile but different env vars.
+  # Internal port is always 5001; host maps to 5002.
+  # The registry stores the internal Docker network port (5001), not the host port.
+  # -------------------------------------------------------------------------
+  trivia-svc-2:
+    build:
+      context: ./trivia_service
+      dockerfile: Dockerfile
+    container_name: trivia-svc-2
+    ports:
+      - "5002:5001"
+    environment:
+      INSTANCE_NAME: trivia-svc-2
+      INSTANCE_PORT: "5001"
+      REGISTRY_URL: http://registry:8000
+    networks:
+      - service-mesh
+    depends_on:
+      registry:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Client — runs once, then exits (restart: "no")
+  # -------------------------------------------------------------------------
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: trivia-client
+    environment:
+      REGISTRY_URL: http://registry:8000
+    networks:
+      - service-mesh
+    depends_on:
+      registry:
+        condition: service_healthy
+      trivia-svc-1:
+        condition: service_started
+      trivia-svc-2:
+        condition: service_started
+    restart: "no"
