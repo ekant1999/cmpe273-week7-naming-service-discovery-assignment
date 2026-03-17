@@ -1,0 +1,30 @@
+networks:
+  service-mesh:
+    driver: bridge
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Custom Service Registry — the source of truth for all live instances
+  # -------------------------------------------------------------------------
+  registry:
+    build:
+      context: ./registry
+      dockerfile: Dockerfile
+    container_name: registry
+    ports:
+      - "8000:8000"
+    networks:
+      - service-mesh
+    healthcheck:
+      # python:3.11-slim has no curl; use stdlib urllib instead
+      test:
+        - "CMD"
+        - "python3"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
