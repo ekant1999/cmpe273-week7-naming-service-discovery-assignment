@@ -108,3 +108,30 @@ def deregister(instance_id: str):
             print(f"[registry] DEREGISTERED  {instance_id} ({service_name})")
             return {"message": f"Deregistered {instance_id}"}
     raise HTTPException(status_code=404, detail=f"Unknown instance: {instance_id}")
+
+
+@app.get("/discover/{service_name}")
+def discover(service_name: str):
+    """Return only healthy instances of a service. 503 if none available."""
+    if service_name not in services:
+        raise HTTPException(status_code=404, detail=f"Unknown service: {service_name}")
+    healthy = [
+        inst for inst in services[service_name].values()
+        if inst["status"] == "healthy"
+    ]
+    if not healthy:
+        raise HTTPException(status_code=503, detail=f"No healthy instances of '{service_name}'")
+    return healthy
+
+
+@app.get("/services")
+def list_services():
+    """Admin endpoint — returns all instances including dead ones."""
+    return services
+
+
+@app.get("/health")
+def health():
+    """Docker healthcheck endpoint."""
+    total = sum(len(b) for b in services.values())
+    return {"status": "ok", "registered_instances": total}
