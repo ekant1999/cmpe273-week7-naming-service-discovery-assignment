@@ -67,3 +67,30 @@ async def register_with_registry() -> None:
             print(f"[{INSTANCE_NAME}] Register attempt {attempt + 1} failed: {exc}. Retrying in {wait}s")
             await asyncio.sleep(wait)
     print(f"[{INSTANCE_NAME}] WARNING: Could not register after {MAX_REGISTER_RETRIES} attempts")
+
+
+async def heartbeat_loop() -> None:
+    while True:
+        await asyncio.sleep(HEARTBEAT_INTERVAL)
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{REGISTRY_URL}/heartbeat/{INSTANCE_NAME}", timeout=3.0
+                )
+                if resp.status_code == 404:
+                    # Registry forgot us (restarted with empty state) — re-register
+                    print(f"[{INSTANCE_NAME}] Heartbeat returned 404 — re-registering...")
+                    await register_with_registry()
+        except Exception as exc:
+            print(f"[{INSTANCE_NAME}] Heartbeat error: {exc}")
+
+
+async def deregister() -> None:
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.delete(
+                f"{REGISTRY_URL}/deregister/{INSTANCE_NAME}", timeout=3.0
+            )
+            print(f"[{INSTANCE_NAME}] Deregistered from registry")
+    except Exception as exc:
+        print(f"[{INSTANCE_NAME}] Deregister error (non-fatal): {exc}")
