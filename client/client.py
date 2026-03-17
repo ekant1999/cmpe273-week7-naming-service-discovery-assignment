@@ -44,3 +44,70 @@ async def call_trivia(instance: dict) -> dict | None:
     except Exception as exc:
         print(f"[client] Failed to call {url}: {exc}")
         return None
+
+
+async def main() -> None:
+    banner = "  Service Discovery Demo — Trivia Client  "
+    print("=" * len(banner))
+    print(banner)
+    print("=" * len(banner))
+
+    # -----------------------------------------------------------------------
+    # Phase 1: Initial discovery
+    # -----------------------------------------------------------------------
+    print(f"\n[client] Discovering '{SERVICE_NAME}' instances from registry...")
+    instances = await discover_instances()
+
+    if not instances:
+        print("[client] No healthy instances found after all retries. Exiting.")
+        return
+
+    print(f"[client] Found {len(instances)} healthy instance(s):")
+    for inst in instances:
+        print(f"         - {inst['instance_id']}  @  {inst['host']}:{inst['port']}")
+
+    # -----------------------------------------------------------------------
+    # Phase 2: Make TOTAL_REQUESTS calls, re-discovering each time so topology
+    #          changes (instance up/down) are reflected immediately.
+    # -----------------------------------------------------------------------
+    print(f"\n[client] Sending {TOTAL_REQUESTS} requests (1 per second)...\n")
+    call_counts: dict[str, int] = {}
+
+    for i in range(1, TOTAL_REQUESTS + 1):
+        # Re-discover on every request — the whole point of dynamic service discovery
+        fresh = await discover_instances()
+        if not fresh:
+            print(f"[client] Request {i:2d}: no healthy instances, skipping.")
+            await asyncio.sleep(REQUEST_INTERVAL)
+            continue
+
+        chosen = random.choice(fresh)
+        result = await call_trivia(chosen)
+
+        if result:
+            name = result.get("instance", chosen["instance_id"])
+            call_counts[name] = call_counts.get(name, 0) + 1
+            fact_preview = result["fact"][:65] + ("..." if len(result["fact"]) > 65 else "")
+            print(f"[client] Request {i:2d}  ->  [{name}]  {fact_preview}")
+        else:
+            print(f"[client] Request {i:2d}  ->  [{chosen['instance_id']}]  FAILED")
+
+        await asyncio.sleep(REQUEST_INTERVAL)
+
+    # -----------------------------------------------------------------------
+    # Phase 3: Load distribution summary
+    # -----------------------------------------------------------------------
+    print()
+    print("=" * 50)
+    print("  Load Distribution Summary")
+    print("=" * 50)
+    total_calls = sum(call_counts.values())
+    for name, count in sorted(call_counts.items()):
+        bar = "#" * count
+        pct = count / total_calls * 100 if total_calls else 0
+        print(f"  {name:20s}  {bar:<12s}  {count} calls ({pct:.0f}%)")
+    print("=" * 50)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
