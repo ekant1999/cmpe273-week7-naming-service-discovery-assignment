@@ -114,3 +114,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=f"Trivia Service — {INSTANCE_NAME}", version="1.0.0", lifespan=lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/trivia")
+def get_trivia():
+    return {
+        "fact": random.choice(TRIVIA_FACTS),
+        "instance": INSTANCE_NAME,
+        "port": INSTANCE_PORT,
+        "served_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy", "instance": INSTANCE_NAME, "port": INSTANCE_PORT}
