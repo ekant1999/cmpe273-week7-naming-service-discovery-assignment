@@ -86,3 +86,25 @@ def register(req: RegisterRequest):
     }
     print(f"[registry] REGISTERED  {req.instance_id} ({req.service_name}) @ {req.host}:{req.port}")
     return services[req.service_name][req.instance_id]
+
+
+@app.post("/heartbeat/{instance_id}")
+def heartbeat(instance_id: str):
+    """Update last_seen for an instance. Returns 404 if unknown (service should re-register)."""
+    for bucket in services.values():
+        if instance_id in bucket:
+            bucket[instance_id]["last_seen"] = time.time()
+            bucket[instance_id]["status"] = "healthy"
+            return {"instance_id": instance_id, "last_seen": bucket[instance_id]["last_seen"]}
+    raise HTTPException(status_code=404, detail=f"Unknown instance: {instance_id}")
+
+
+@app.delete("/deregister/{instance_id}")
+def deregister(instance_id: str):
+    """Explicitly remove an instance (called on graceful shutdown)."""
+    for service_name, bucket in services.items():
+        if instance_id in bucket:
+            del bucket[instance_id]
+            print(f"[registry] DEREGISTERED  {instance_id} ({service_name})")
+            return {"message": f"Deregistered {instance_id}"}
+    raise HTTPException(status_code=404, detail=f"Unknown instance: {instance_id}")
