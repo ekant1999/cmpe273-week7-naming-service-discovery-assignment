@@ -94,3 +94,23 @@ async def deregister() -> None:
             print(f"[{INSTANCE_NAME}] Deregistered from registry")
     except Exception as exc:
         print(f"[{INSTANCE_NAME}] Deregister error (non-fatal): {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await register_with_registry()
+    hb_task = asyncio.create_task(heartbeat_loop())
+    print(f"[{INSTANCE_NAME}] Ready on port {INSTANCE_PORT}")
+    yield
+    hb_task.cancel()
+    try:
+        await hb_task
+    except asyncio.CancelledError:
+        pass
+    await deregister()
+
+
+app = FastAPI(title=f"Trivia Service — {INSTANCE_NAME}", version="1.0.0", lifespan=lifespan)
